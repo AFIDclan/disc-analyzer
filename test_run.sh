@@ -3,5 +3,5 @@ cd run/
 surfaceFeatureExtract
 blockMesh
 snappyHexMesh -overwrite
--decomposePar -force
--mpirun -np 4 simpleFoam -parallel
+decomposePar -force
+mpirun -np 4 simpleFoam -parallel
