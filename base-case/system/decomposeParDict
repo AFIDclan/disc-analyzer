@@ -16,7 +16,7 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-numberOfSubdomains 4; // Number of processor cores to use
+numberOfSubdomains 24; // Number of processor cores to use
 
 method scotch; // Decomposition method (options: simple, scotch, hierarchical, etc.)
 
