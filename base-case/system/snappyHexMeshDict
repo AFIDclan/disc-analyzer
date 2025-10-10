@@ -20,7 +20,7 @@ addLayers       true;
 
 geometry
 {
-    disc.stl
+    model.stl
     {
         type triSurfaceMesh;
         name disc;
@@ -47,7 +47,7 @@ castellatedMeshControls
 
     features
     (
-        { file "disc.eMesh"; level 3; }
+        { file "model.eMesh"; level 3; }
     );
 
     refinementSurfaces

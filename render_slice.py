@@ -84,8 +84,8 @@ plane_vel_y = vel[1, plane_mask]  # Uy
 num_plane_cells = len(plane_centers_xy)
 print(f"Cells on xy-plane (z≈0): {num_plane_cells}")
 
-# Load and overlay the disc wall geometry from STL
-stl_path = sol + 'constant/triSurface/disc.stl'
+# Load and overlay the model wall geometry from STL
+stl_path = sol + 'constant/triSurface/model.stl'
 
 triangles_xy = load_and_project_stl(stl_path, 0.001)
 

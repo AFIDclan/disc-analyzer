@@ -14,7 +14,7 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-disc.stl
+model.stl
 {
     extractionMethod    extractFromSurface;
 
