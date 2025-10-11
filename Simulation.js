@@ -49,7 +49,7 @@ class Simulation {
             this.log.info(`Rendering simulation at time: ${this.current_time}`);
 
             // Run python script with venv active
-            await this.run_command(`./venv/bin/python3 -u ./render_slice.py ${this.run_directory} ${aoa_dir}/render.png --time=${this.current_time} --notes="AoA: ${aoa} degrees"`,
+            await this.run_command(`./venv/bin/python3 -u ./scripts/render_slice.py ${this.run_directory} ${aoa_dir}/render.png --time=${this.current_time} --notes="AoA: ${aoa} degrees"`,
                 (data) => { this.log.info(data); },
                 (data) => { this.log.error(`[render stderr] ${data}`); }
             );

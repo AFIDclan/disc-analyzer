@@ -4,9 +4,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 from scipy.interpolate import PchipInterpolator
+import argparse
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Postprocess simulation data from a directory containing angle of attack (AoA) folders')
+parser.add_argument('folder_path', help='Path to the directory containing AoA folders with results.json files')
+args = parser.parse_args()
 
 # Define the base directory containing AoA folders
-base_dir = "output/test-sim"
+base_dir = args.folder_path
+
+# Validate that the directory exists
+if not os.path.exists(base_dir):
+    raise FileNotFoundError(f"The specified directory does not exist: {base_dir}")
+
+if not os.path.isdir(base_dir):
+    raise NotADirectoryError(f"The specified path is not a directory: {base_dir}")
+
+print(f"Processing data from: {base_dir}")
 
 # Initialize lists to store data
 data_list = []
@@ -126,7 +141,7 @@ plt.legend()
 
 # Adjust layout and save/display plot
 plt.tight_layout()
-plt.savefig("output/test-sim/coefficients_plot.png")
+plt.savefig(os.path.join(base_dir, "coefficients_plot.png"))
 plt.show()
 
 # Create GIF from PNG files in ascending AoA order
@@ -139,13 +154,14 @@ if png_files:
         images.append(img)
     
     # Save GIF
+    gif_path = os.path.join(base_dir, "output.gif")
     images[0].save(
-        "output/test-sim/output.gif",
+        gif_path,
         save_all=True,
         append_images=images[1:],
         duration=300,  # Duration in milliseconds per frame
         loop=0  # Loop forever
     )
-    print("GIF created successfully: output/test-sim/output.gif")
+    print(f"GIF created successfully: {gif_path}")
 else:
     print("No PNG files found for GIF creation.")
