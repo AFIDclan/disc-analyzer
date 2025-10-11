@@ -5,16 +5,76 @@ import cv2
 import numpy as np
 from scipy.interpolate import griddata, RegularGridInterpolator
 from stl import mesh  # Requires: pip install numpy-stl
+import argparse
+import os
+import sys
 
+# Parse command line arguments
+parser = argparse.ArgumentParser(
+    description='Render flow visualization slice from OpenFOAM simulation data',
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog="""
+Examples:
+  python render_slice.py ./run/ output.png
+  python render_slice.py ./run/ output.png --notes "High Reynolds simulation"
+  python render_slice.py ./run/ output.png --time 600 --min-speed 0 --max-speed 40
+  python render_slice.py ./run/ output.png --width 1920 --height 1080 --tolerance 0.05
+    """
+)
 
+parser.add_argument('sol_dir', 
+                    help='Path to OpenFOAM solution directory (e.g., ./run/)')
+parser.add_argument('output_file', 
+                    help='Output PNG file name (e.g., flow_slice.png)')
+parser.add_argument('--notes', '-n', 
+                    default='', 
+                    help='Text to render in top left corner of image')
+parser.add_argument('--time', '-t', 
+                    default='800', 
+                    help='Time directory to read from (default: 800)')
+parser.add_argument('--min-speed', 
+                    type=float, 
+                    default=0.0, 
+                    help='Minimum speed for colormap normalization (default: 0.0)')
+parser.add_argument('--max-speed', 
+                    type=float, 
+                    default=35.0, 
+                    help='Maximum speed for colormap normalization (default: 35.0)')
+parser.add_argument('--width', '-w', 
+                    type=int, 
+                    default=1920, 
+                    help='Image width in pixels (default: 1920)')
+parser.add_argument('--height', 
+                    type=int, 
+                    default=1080, 
+                    help='Image height in pixels (default: 1080)')
+parser.add_argument('--tolerance', 
+                    type=float, 
+                    default=0.02, 
+                    help='Z-tolerance for selecting xy-plane cells (default: 0.02)')
+parser.add_argument('--padding', 
+                    type=float, 
+                    default=0.05, 
+                    help='Padding around viewing area as fraction (default: 0.05)')
 
-sol = './run/'
-timename = '800'
-min_speed = 0
-max_speed = 35.0
+args = parser.parse_args()
+
+# Validate inputs
+if not os.path.exists(args.sol_dir):
+    print(f"Error: Solution directory '{args.sol_dir}' does not exist.")
+    sys.exit(1)
+
+if not args.sol_dir.endswith('/'):
+    args.sol_dir += '/'
+
+sol = args.sol_dir
+timename = args.time
+min_speed = args.min_speed
+max_speed = args.max_speed
 # Image dimensions (approximating figsize=(12,9) at ~100 dpi)
-h = 1080
-w = 1920
+h = args.height
+w = args.width
+notes = args.notes
 
 aspect = w / h
 
@@ -36,17 +96,7 @@ def load_and_project_stl(stl_path, tol=0.001):
 
 
 # # Read unstructured mesh points
-# points = readmesh(sol, structured=False)  # Shape: (n_points, 3)
-
-# save points to pickle for later use
-# import pickle
-# with open('points.pkl', 'wb') as f:
-#     pickle.dump(points, f)
-
-# Load points from pickle (this is (X, Y, Z) tuple from readmesh)
-import pickle
-with open('points.pkl', 'rb') as f:
-    points = pickle.load(f)
+points = readmesh(sol, structured=False)  # Shape: (n_points, 3)
 
 # Unpack and stack into cell centers (n_cells, 3)
 X, Y, Z = points
@@ -73,7 +123,7 @@ else:
 print(f"Using {n} cells for analysis.")
 
 
-tol = 0.02  # Adjust if too few/many points on plane
+tol = args.tolerance  # Adjust if too few/many points on plane
 plane_mask = np.abs(cell_centers[:, 2]) < tol  # z = 0
 
 # Extract plane data
@@ -122,9 +172,9 @@ x_max = x_center + x_half_range
 y_min = y_center - y_half_range
 y_max = y_center + y_half_range
 
-# Expand viewing area slightly (5% padding on each side)
-pad_x = 0.05 * (x_max - x_min)
-pad_y = 0.05 * (y_max - y_min)
+# Expand viewing area slightly (padding on each side)
+pad_x = args.padding * (x_max - x_min)
+pad_y = args.padding * (y_max - y_min)
 x_min -= pad_x
 x_max += pad_x
 y_min -= pad_y
@@ -196,6 +246,26 @@ if len(triangles_xy) > 0:
 
 img = colored
 
+# Add notes text to top left corner if provided
+if notes:
+    # Set up text properties
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 1.0
+    text_color = (255, 255, 255)  # White text
+    text_thickness = 2
+    
+    # Get text size for background rectangle
+    (text_width, text_height), baseline = cv2.getTextSize(notes, font, font_scale, text_thickness)
+    
+    # Draw background rectangle (semi-transparent black)
+    overlay = img.copy()
+    cv2.rectangle(overlay, (10, 10), (text_width + 30, text_height + 30), (0, 0, 0), -1)
+    alpha = 0.7  # Transparency factor
+    img = cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
+    
+    # Draw text
+    cv2.putText(img, notes, (20, text_height + 20), font, font_scale, text_color, text_thickness)
+
 # Optional: Streamlines (commented out)
 # step_size = 0.02  # Adjust based on domain size
 # max_len = 200
@@ -235,5 +305,5 @@ img = colored
 
 
 # Save the image
-cv2.imwrite('flow_lines_xy_slice_with_stl.png', img)
-print("Saved flow_lines_xy_slice_with_stl.png")
+cv2.imwrite(args.output_file, img)
+print(f"Saved {args.output_file}")

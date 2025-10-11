@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "shell-quote": "^1.8.3",
     "yalls": "^0.7.0"
   }
 }
