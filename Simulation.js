@@ -4,7 +4,7 @@ const { Logger } = require("yalls");
 const shellQuote = require('shell-quote');
 
 class Simulation {
-    constructor(name, model_path, angle_of_attacks=[10.0]) {
+    constructor(name, model_path, angle_of_attacks=[10.0], options={}) {
         this.name = name;
         this.model_path = model_path;
         this.angle_of_attacks = angle_of_attacks;
@@ -12,6 +12,18 @@ class Simulation {
         this.log.set_log_level("info");
 
         this.run_directory = `run/${name}`;
+        
+        // Callback functions for progress tracking
+        this.onProgress = options.onProgress || null;
+        this.onAoAStart = options.onAoAStart || null;
+        this.onAoAComplete = options.onAoAComplete || null;
+        this.onTimeUpdate = options.onTimeUpdate || null;
+        this.onLogMessage = options.onLogMessage || null;
+        
+        // Constants for progress calculation
+        this.MAX_SIMULATION_TIME = 800;
+        this.current_aoa_index = 0;
+        this.current_process = null; // Track current running process
     }
 
     async run(n_processors=4) {
@@ -24,7 +36,15 @@ class Simulation {
         // Make output/name/ directory
         await this.run_command(`mkdir -p output/${this.name}`);
 
-        for (const aoa of this.angle_of_attacks) {
+        for (let i = 0; i < this.angle_of_attacks.length; i++) {
+            const aoa = this.angle_of_attacks[i];
+            this.current_aoa_index = i;
+            
+            // Notify AoA start
+            if (this.onAoAStart) {
+                this.onAoAStart(aoa, i, this.angle_of_attacks.length);
+            }
+            
             this.log.info(`\n=== Simulating angle of attack: ${aoa} degrees ===`);
             await this.simulate(n_processors, aoa);
             this.log.info(`=== Completed angle of attack: ${aoa} degrees ===\n`);
@@ -55,6 +75,11 @@ class Simulation {
             );
 
             this.log.info(`Saved render to ${aoa_dir}/render.png`);
+            
+            // Notify AoA completion
+            if (this.onAoAComplete) {
+                this.onAoAComplete(aoa, i, this.angle_of_attacks.length);
+            }
         }
 
 
@@ -159,8 +184,12 @@ class Simulation {
 
 
     async parse_solver_output(data) {
-        // Example line: Time = 0.1
+        // Log all output if callback exists
+        if (this.onLogMessage) {
+            this.onLogMessage(data.toString().trim());
+        }
 
+        // Example line: Time = 0.1
         let time_line = data.split('\n').find((line) => line.startsWith('Time = '));
         const time_match = (time_line || "").match(/^Time = ([0-9.eE+-]+)/);
         if (time_match) {
@@ -168,6 +197,23 @@ class Simulation {
             this.current_time = time;
             this.log.info(`Simulation time: ${time}`);
             
+            // Calculate fine-grained progress based on simulation time
+            if (this.onTimeUpdate) {
+                const timeProgress = Math.min(time / this.MAX_SIMULATION_TIME, 1.0); // 0-1 for current AoA
+                const aoaProgress = this.current_aoa_index / this.angle_of_attacks.length; // 0-1 for completed AoAs
+                const overallProgress = (aoaProgress + (timeProgress / this.angle_of_attacks.length)) * 100;
+                
+                this.onTimeUpdate(time, timeProgress, overallProgress, this.current_aoa_index);
+            }
+            
+            // Update overall progress callback
+            if (this.onProgress) {
+                const timeProgress = Math.min(time / this.MAX_SIMULATION_TIME, 1.0);
+                const aoaProgress = this.current_aoa_index / this.angle_of_attacks.length;
+                const overallProgress = Math.round((aoaProgress + (timeProgress / this.angle_of_attacks.length)) * 100);
+                
+                this.onProgress(overallProgress, this.angle_of_attacks[this.current_aoa_index], time);
+            }
         }
 
         // Example line: Solving for Ux, Initial residual = 0.001234, Final residual = 1.234e-05, No Iterations 2
@@ -179,7 +225,6 @@ class Simulation {
             const iterations = parseInt(residual_match[4]);
             this.log.info(`Field: ${field}, Initial Residual: ${initial_residual}, Final Residual: ${final_residual}, Iterations: ${iterations}`);
         }
-        
     }
 
 
@@ -198,6 +243,9 @@ async run_command(command, stdout_cb = null, stderr_cb = null) {
             stdio: ['pipe', 'pipe', 'pipe'],
         });
 
+        // Store reference to current process
+        this.current_process = child;
+
         let hadError = false;
         let exitCode = null;
 
@@ -209,6 +257,7 @@ async run_command(command, stdout_cb = null, stderr_cb = null) {
 
         child.on('close', (code) => {
             exitCode = code;
+            this.current_process = null; // Clear process reference
             if (code !== 0 && !hadError) {
                 const err = new Error(`Command exited with non-zero code: ${code}`);
                 this.log.error(`Command failed: ${err}`);

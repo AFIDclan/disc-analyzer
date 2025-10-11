@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disc Analyzer - CFD Analysis Interface</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <div class="container">
+                <h1 class="header-title">🥏 Disc Analyzer</h1>
+                <p class="header-subtitle">CFD Analysis Interface</p>
+            </div>
+        </header>
+
+        <main class="main">
+            <div class="container">
+                <!-- Authentication Section -->
+                <div id="auth-section" class="auth-section" style="display: none;">
+                    <div class="login-form">
+                        <h2>🔐 Login Required</h2>
+                        <form id="login-form">
+                            <div class="form-group">
+                                <label for="username">Username:</label>
+                                <input type="text" id="username" name="username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="password">Password:</label>
+                                <input type="password" id="password" name="password" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Login</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Main Content (hidden until authenticated) -->
+                <div id="main-content" style="display: none;">
+                    <!-- Navigation Tabs -->
+                    <nav class="nav-tabs">
+                        <button class="nav-tab active" data-tab="jobs">Jobs</button>
+                        <button class="nav-tab" data-tab="create">New Job</button>
+                        <button class="nav-tab" data-tab="system">System</button>
+                        <button id="logout-btn" class="nav-tab logout-tab">Logout</button>
+                    </nav>
+
+                <!-- Jobs Tab -->
+                <div id="jobs-tab" class="tab-content active">
+                    <div class="section-header">
+                        <h2>Simulation Jobs</h2>
+                        <button id="refresh-jobs" class="btn btn-secondary">
+                            <span class="refresh-icon">🔄</span> Refresh
+                        </button>
+                    </div>
+                    
+                    <div id="jobs-loading" class="loading">Loading jobs...</div>
+                    <div id="jobs-list" class="jobs-list"></div>
+                </div>
+
+                <!-- Create Job Tab -->
+                <div id="create-tab" class="tab-content">
+                    <div class="section-header">
+                        <h2>Create New Job</h2>
+                    </div>
+                    
+                    <form id="job-form" class="job-form">
+                        <div class="form-group">
+                            <label for="job-name">Job Name:</label>
+                            <input type="text" id="job-name" name="name" required placeholder="e.g., putter-test-1">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="model-path">Model Path:</label>
+                            <select id="model-path" name="modelPath" required>
+                                <option value="">Select a model...</option>
+                                <!-- Dynamically populated -->
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="file-upload">Or Upload New STL File:</label>
+                            <input type="file" id="file-upload" accept=".stl" style="margin-bottom: 10px;">
+                            <button type="button" id="upload-btn" class="btn btn-secondary" disabled>
+                                📤 Upload STL
+                            </button>
+                            <div id="upload-status" style="margin-top: 5px;"></div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="processors">Number of Processors:</label>
+                            <input type="number" id="processors" name="processors" value="4" min="1" max="32">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="aoa-preset">Angle of Attack Preset:</label>
+                            <select id="aoa-preset">
+                                <option value="">Custom...</option>
+                                <option value="basic">Basic: -10, -5, 0, 5, 10</option>
+                                <option value="extended">Extended: -20 to 20 (5° steps)</option>
+                                <option value="full">Full Sweep: -60 to 90 (various steps)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="aoa-values">Angles of Attack (degrees, comma-separated):</label>
+                            <textarea id="aoa-values" name="angleOfAttacks" rows="3" required 
+                                placeholder="e.g., -10, -5, 0, 5, 10, 15, 20"></textarea>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <span class="submit-icon">🚀</span> Start Simulation
+                        </button>
+                    </form>
+                </div>
+
+                <!-- System Tab -->
+                <div id="system-tab" class="tab-content">
+                    <div class="section-header">
+                        <h2>System Monitor</h2>
+                    </div>
+                    
+                    <div class="cpu-monitor">
+                        <h3>CPU Usage</h3>
+                        <div id="cpu-overall" class="cpu-overall">
+                            <div class="cpu-label">Overall CPU:</div>
+                            <div class="cpu-percentage">0%</div>
+                        </div>
+                        <div id="cpu-cores" class="cpu-cores-grid">
+                            <!-- Dynamically populated -->
+                        </div>
+                    </div>
+                </div>
+                </div> <!-- End main-content -->
+
+                <!-- Job Detail Modal -->
+                <div id="job-modal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3 id="modal-job-name">Job Details</h3>
+                            <button class="modal-close">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="job-detail-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
