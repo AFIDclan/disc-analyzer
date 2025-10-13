@@ -88,6 +88,19 @@ class DiscAnalyzer {
                 this.closeModal();
             }
         });
+
+        // Comparison events
+        document.getElementById('compare-job1').addEventListener('change', () => {
+            this.updateComparisonButton();
+        });
+
+        document.getElementById('compare-job2').addEventListener('change', () => {
+            this.updateComparisonButton();
+        });
+
+        document.getElementById('run-comparison').addEventListener('click', () => {
+            this.runComparison();
+        });
     }
 
     switchTab(tabName) {
@@ -100,6 +113,11 @@ class DiscAnalyzer {
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.toggle('active', content.id === `${tabName}-tab`);
         });
+
+        // Load comparison job lists when switching to compare tab
+        if (tabName === 'compare') {
+            this.loadCompletedJobs();
+        }
     }
 
     handleAoAPreset(preset) {
@@ -117,12 +135,23 @@ class DiscAnalyzer {
 
     async loadJobs() {
         try {
+            // Store current scroll position of jobs list
+            const jobsList = document.getElementById('jobs-list');
+            const scrollTop = jobsList ? jobsList.scrollTop : 0;
+            
             this.showLoading();
             const response = await fetch('/api/jobs');
             if (!response.ok) throw new Error('Failed to load jobs');
             
             this.jobs = await response.json();
             this.renderJobs();
+            
+            // Restore scroll position
+            if (jobsList) {
+                setTimeout(() => {
+                    jobsList.scrollTop = scrollTop;
+                }, 0);
+            }
         } catch (error) {
             console.error('Error loading jobs:', error);
             this.showError('Failed to load jobs');
@@ -448,12 +477,21 @@ class DiscAnalyzer {
     }
 
     renderJobLogs(job) {
+        const logInfo = job.logInfo || {};
+        const logs = job.logs || [];
+        
+        let logHeader = '📋 Logs';
+        if (logInfo.limited) {
+            logHeader += ` (showing last ${logInfo.showing} of ${logInfo.totalLogs})`;
+        }
+        
         return `
             <div class="detail-section">
-                <h4>📋 Logs</h4>
+                <h4>${logHeader}</h4>
+                ${logInfo.limited ? `<div class="log-warning">⚠️ Showing only the most recent ${logInfo.showing} log entries for performance. Total logs: ${logInfo.totalLogs}</div>` : ''}
                 <div class="logs-container" id="job-logs">
-                    ${job.logs && job.logs.length > 0 
-                        ? job.logs.map(log => `<div class="log-entry">${this.escapeHtml(log)}</div>`).join('')
+                    ${logs.length > 0 
+                        ? logs.map(log => `<div class="log-entry">${this.escapeHtml(log)}</div>`).join('')
                         : '<div class="log-entry">No logs available</div>'
                     }
                 </div>
@@ -495,9 +533,29 @@ class DiscAnalyzer {
                 
                 const job = await response.json();
                 
+                // Store current scroll position of logs container
+                const logsContainer = document.getElementById('job-logs');
+                const scrollTop = logsContainer ? logsContainer.scrollTop : 0;
+                const isScrolledToBottom = logsContainer ? 
+                    Math.abs(logsContainer.scrollHeight - logsContainer.scrollTop - logsContainer.clientHeight) < 5 : false;
+                
                 // Update the modal content
                 document.getElementById('job-detail-content').innerHTML = 
                     this.renderJobDetails(job);
+                
+                // Restore or maintain scroll position
+                const newLogsContainer = document.getElementById('job-logs');
+                if (newLogsContainer) {
+                    setTimeout(() => {
+                        if (isScrolledToBottom) {
+                            // If user was at bottom, keep them at bottom (for new logs)
+                            newLogsContainer.scrollTop = newLogsContainer.scrollHeight;
+                        } else {
+                            // Otherwise preserve their position
+                            newLogsContainer.scrollTop = scrollTop;
+                        }
+                    }, 0);
+                }
                 
                 // If job is no longer running, stop updates
                 if (job.status !== 'running') {
@@ -819,6 +877,144 @@ class DiscAnalyzer {
             }
         } catch (error) {
             this.showError('Postprocessing failed: ' + error.message);
+        }
+    }
+
+    // Comparison Methods
+    async loadCompletedJobs() {
+        try {
+            const completedJobs = this.jobs.filter(job => job.status === 'completed');
+            
+            const job1Select = document.getElementById('compare-job1');
+            const job2Select = document.getElementById('compare-job2');
+            
+            // Clear existing options (keep first placeholder option)
+            job1Select.innerHTML = '<option value="">Select a completed job...</option>';
+            job2Select.innerHTML = '<option value="">Select a completed job...</option>';
+            
+            // Add completed jobs
+            completedJobs.forEach(job => {
+                const option1 = new Option(`${job.name} (Job #${job.id})`, job.id);
+                const option2 = new Option(`${job.name} (Job #${job.id})`, job.id);
+                job1Select.add(option1);
+                job2Select.add(option2);
+            });
+            
+            this.updateComparisonButton();
+        } catch (error) {
+            console.error('Error loading completed jobs:', error);
+        }
+    }
+
+    updateComparisonButton() {
+        const job1 = document.getElementById('compare-job1').value;
+        const job2 = document.getElementById('compare-job2').value;
+        const button = document.getElementById('run-comparison');
+        
+        button.disabled = !job1 || !job2 || job1 === job2;
+    }
+
+    async runComparison() {
+        try {
+            const job1Id = document.getElementById('compare-job1').value;
+            const job2Id = document.getElementById('compare-job2').value;
+            
+            if (!job1Id || !job2Id) {
+                this.showError('Please select two different jobs to compare');
+                return;
+            }
+            
+            if (job1Id === job2Id) {
+                this.showError('Please select two different jobs');
+                return;
+            }
+
+            // Show loading state
+            document.getElementById('comparison-loading').style.display = 'block';
+            document.getElementById('comparison-results').style.display = 'none';
+
+            const response = await fetch('/api/compare', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    job1Id: parseInt(job1Id),
+                    job2Id: parseInt(job2Id)
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error);
+            }
+
+            const result = await response.json();
+            this.displayComparisonResults(result.comparison);
+
+        } catch (error) {
+            console.error('Comparison error:', error);
+            this.showError('Comparison failed: ' + error.message);
+        } finally {
+            document.getElementById('comparison-loading').style.display = 'none';
+        }
+    }
+
+    displayComparisonResults(comparison) {
+        // Update job names
+        document.getElementById('comparison-jobs').textContent = 
+            `${comparison.job1.name} vs ${comparison.job2.name}`;
+
+        // Update comparison image
+        const img = document.getElementById('comparison-image');
+        img.src = comparison.imageUrl;
+        img.onload = () => {
+            document.getElementById('comparison-results').style.display = 'block';
+        };
+
+        // Update statistics if available
+        if (comparison.stats && !comparison.stats.error) {
+            const stats = comparison.stats;
+            
+            // Update job names in stats
+            document.getElementById('job1-name-cl').textContent = `${stats.job1.name}:`;
+            document.getElementById('job1-name-cd').textContent = `${stats.job1.name}:`;
+            document.getElementById('job1-name-cm').textContent = `${stats.job1.name}:`;
+            document.getElementById('job2-name-cl').textContent = `${stats.job2.name}:`;
+            document.getElementById('job2-name-cd').textContent = `${stats.job2.name}:`;
+            document.getElementById('job2-name-cm').textContent = `${stats.job2.name}:`;
+            
+            // Update values
+            document.getElementById('job1-cl').textContent = stats.job1.cl.toFixed(4);
+            document.getElementById('job1-cd').textContent = stats.job1.cd.toFixed(4);
+            document.getElementById('job1-cm').textContent = stats.job1.cmPitch.toFixed(4);
+            
+            document.getElementById('job2-cl').textContent = stats.job2.cl.toFixed(4);
+            document.getElementById('job2-cd').textContent = stats.job2.cd.toFixed(4);
+            document.getElementById('job2-cm').textContent = stats.job2.cmPitch.toFixed(4);
+            
+            // Update differences with color coding
+            this.updateDifferenceValue('diff-cl', stats.differences.cl);
+            this.updateDifferenceValue('diff-cd', stats.differences.cd);
+            this.updateDifferenceValue('diff-cm', stats.differences.cmPitch);
+        }
+    }
+
+    updateDifferenceValue(elementId, value) {
+        const element = document.getElementById(elementId);
+        const formattedValue = value.toFixed(4);
+        const sign = value > 0 ? '+' : '';
+        
+        element.textContent = `${sign}${formattedValue}`;
+        
+        // Color coding for differences
+        element.className = 'stat-value';
+        if (value > 0) {
+            element.classList.add('positive');
+        } else if (value < 0) {
+            element.classList.add('negative');
+        } else {
+            element.classList.add('neutral');
         }
     }
 }

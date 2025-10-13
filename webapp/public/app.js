@@ -66,6 +66,15 @@
           this.closeModal();
         }
       });
+      document.getElementById("compare-job1").addEventListener("change", () => {
+        this.updateComparisonButton();
+      });
+      document.getElementById("compare-job2").addEventListener("change", () => {
+        this.updateComparisonButton();
+      });
+      document.getElementById("run-comparison").addEventListener("click", () => {
+        this.runComparison();
+      });
     }
     switchTab(tabName) {
       document.querySelectorAll(".nav-tab").forEach((tab) => {
@@ -74,6 +83,9 @@
       document.querySelectorAll(".tab-content").forEach((content) => {
         content.classList.toggle("active", content.id === `${tabName}-tab`);
       });
+      if (tabName === "compare") {
+        this.loadCompletedJobs();
+      }
     }
     handleAoAPreset(preset) {
       const aoaInput = document.getElementById("aoa-values");
@@ -88,12 +100,19 @@
     }
     async loadJobs() {
       try {
+        const jobsList = document.getElementById("jobs-list");
+        const scrollTop = jobsList ? jobsList.scrollTop : 0;
         this.showLoading();
         const response = await fetch("/api/jobs");
         if (!response.ok)
           throw new Error("Failed to load jobs");
         this.jobs = await response.json();
         this.renderJobs();
+        if (jobsList) {
+          setTimeout(() => {
+            jobsList.scrollTop = scrollTop;
+          }, 0);
+        }
       } catch (error) {
         console.error("Error loading jobs:", error);
         this.showError("Failed to load jobs");
@@ -363,11 +382,18 @@
       return html;
     }
     renderJobLogs(job) {
+      const logInfo = job.logInfo || {};
+      const logs = job.logs || [];
+      let logHeader = "\u{1F4CB} Logs";
+      if (logInfo.limited) {
+        logHeader += ` (showing last ${logInfo.showing} of ${logInfo.totalLogs})`;
+      }
       return `
             <div class="detail-section">
-                <h4>\u{1F4CB} Logs</h4>
+                <h4>${logHeader}</h4>
+                ${logInfo.limited ? `<div class="log-warning">\u26A0\uFE0F Showing only the most recent ${logInfo.showing} log entries for performance. Total logs: ${logInfo.totalLogs}</div>` : ""}
                 <div class="logs-container" id="job-logs">
-                    ${job.logs && job.logs.length > 0 ? job.logs.map((log) => `<div class="log-entry">${this.escapeHtml(log)}</div>`).join("") : '<div class="log-entry">No logs available</div>'}
+                    ${logs.length > 0 ? logs.map((log) => `<div class="log-entry">${this.escapeHtml(log)}</div>`).join("") : '<div class="log-entry">No logs available</div>'}
                 </div>
             </div>
         `;
@@ -400,7 +426,20 @@
           if (!response.ok)
             return;
           const job = await response.json();
+          const logsContainer = document.getElementById("job-logs");
+          const scrollTop = logsContainer ? logsContainer.scrollTop : 0;
+          const isScrolledToBottom = logsContainer ? Math.abs(logsContainer.scrollHeight - logsContainer.scrollTop - logsContainer.clientHeight) < 5 : false;
           document.getElementById("job-detail-content").innerHTML = this.renderJobDetails(job);
+          const newLogsContainer = document.getElementById("job-logs");
+          if (newLogsContainer) {
+            setTimeout(() => {
+              if (isScrolledToBottom) {
+                newLogsContainer.scrollTop = newLogsContainer.scrollHeight;
+              } else {
+                newLogsContainer.scrollTop = scrollTop;
+              }
+            }, 0);
+          }
           if (job.status !== "running") {
             clearInterval(this.jobDetailInterval);
             this.jobDetailInterval = null;
@@ -677,6 +716,108 @@
         }
       } catch (error) {
         this.showError("Postprocessing failed: " + error.message);
+      }
+    }
+    // Comparison Methods
+    async loadCompletedJobs() {
+      try {
+        const completedJobs = this.jobs.filter((job) => job.status === "completed");
+        const job1Select = document.getElementById("compare-job1");
+        const job2Select = document.getElementById("compare-job2");
+        job1Select.innerHTML = '<option value="">Select a completed job...</option>';
+        job2Select.innerHTML = '<option value="">Select a completed job...</option>';
+        completedJobs.forEach((job) => {
+          const option1 = new Option(`${job.name} (Job #${job.id})`, job.id);
+          const option2 = new Option(`${job.name} (Job #${job.id})`, job.id);
+          job1Select.add(option1);
+          job2Select.add(option2);
+        });
+        this.updateComparisonButton();
+      } catch (error) {
+        console.error("Error loading completed jobs:", error);
+      }
+    }
+    updateComparisonButton() {
+      const job1 = document.getElementById("compare-job1").value;
+      const job2 = document.getElementById("compare-job2").value;
+      const button = document.getElementById("run-comparison");
+      button.disabled = !job1 || !job2 || job1 === job2;
+    }
+    async runComparison() {
+      try {
+        const job1Id = document.getElementById("compare-job1").value;
+        const job2Id = document.getElementById("compare-job2").value;
+        if (!job1Id || !job2Id) {
+          this.showError("Please select two different jobs to compare");
+          return;
+        }
+        if (job1Id === job2Id) {
+          this.showError("Please select two different jobs");
+          return;
+        }
+        document.getElementById("comparison-loading").style.display = "block";
+        document.getElementById("comparison-results").style.display = "none";
+        const response = await fetch("/api/compare", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            job1Id: parseInt(job1Id),
+            job2Id: parseInt(job2Id)
+          })
+        });
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error);
+        }
+        const result = await response.json();
+        this.displayComparisonResults(result.comparison);
+      } catch (error) {
+        console.error("Comparison error:", error);
+        this.showError("Comparison failed: " + error.message);
+      } finally {
+        document.getElementById("comparison-loading").style.display = "none";
+      }
+    }
+    displayComparisonResults(comparison) {
+      document.getElementById("comparison-jobs").textContent = `${comparison.job1.name} vs ${comparison.job2.name}`;
+      const img = document.getElementById("comparison-image");
+      img.src = comparison.imageUrl;
+      img.onload = () => {
+        document.getElementById("comparison-results").style.display = "block";
+      };
+      if (comparison.stats && !comparison.stats.error) {
+        const stats = comparison.stats;
+        document.getElementById("job1-name-cl").textContent = `${stats.job1.name}:`;
+        document.getElementById("job1-name-cd").textContent = `${stats.job1.name}:`;
+        document.getElementById("job1-name-cm").textContent = `${stats.job1.name}:`;
+        document.getElementById("job2-name-cl").textContent = `${stats.job2.name}:`;
+        document.getElementById("job2-name-cd").textContent = `${stats.job2.name}:`;
+        document.getElementById("job2-name-cm").textContent = `${stats.job2.name}:`;
+        document.getElementById("job1-cl").textContent = stats.job1.cl.toFixed(4);
+        document.getElementById("job1-cd").textContent = stats.job1.cd.toFixed(4);
+        document.getElementById("job1-cm").textContent = stats.job1.cmPitch.toFixed(4);
+        document.getElementById("job2-cl").textContent = stats.job2.cl.toFixed(4);
+        document.getElementById("job2-cd").textContent = stats.job2.cd.toFixed(4);
+        document.getElementById("job2-cm").textContent = stats.job2.cmPitch.toFixed(4);
+        this.updateDifferenceValue("diff-cl", stats.differences.cl);
+        this.updateDifferenceValue("diff-cd", stats.differences.cd);
+        this.updateDifferenceValue("diff-cm", stats.differences.cmPitch);
+      }
+    }
+    updateDifferenceValue(elementId, value) {
+      const element = document.getElementById(elementId);
+      const formattedValue = value.toFixed(4);
+      const sign = value > 0 ? "+" : "";
+      element.textContent = `${sign}${formattedValue}`;
+      element.className = "stat-value";
+      if (value > 0) {
+        element.classList.add("positive");
+      } else if (value < 0) {
+        element.classList.add("negative");
+      } else {
+        element.classList.add("neutral");
       }
     }
   };

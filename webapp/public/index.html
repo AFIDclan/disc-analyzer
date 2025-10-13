@@ -41,6 +41,7 @@
                     <nav class="nav-tabs">
                         <button class="nav-tab active" data-tab="jobs">Jobs</button>
                         <button class="nav-tab" data-tab="create">New Job</button>
+                        <button class="nav-tab" data-tab="compare">Compare</button>
                         <button class="nav-tab" data-tab="system">System</button>
                         <button id="logout-btn" class="nav-tab logout-tab">Logout</button>
                     </nav>
@@ -112,6 +113,111 @@
                             <span class="submit-icon">🚀</span> Start Simulation
                         </button>
                     </form>
+                </div>
+
+                <!-- Compare Tab -->
+                <div id="compare-tab" class="tab-content">
+                    <div class="section-header">
+                        <h2>📊 Compare Disc Models</h2>
+                    </div>
+                    
+                    <div class="comparison-form">
+                        <div class="form-group">
+                            <label for="compare-job1">First Job (Baseline):</label>
+                            <select id="compare-job1" required>
+                                <option value="">Select a completed job...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="compare-job2">Second Job (Comparison):</label>
+                            <select id="compare-job2" required>
+                                <option value="">Select a completed job...</option>
+                            </select>
+                        </div>
+                        
+                        <button type="button" id="run-comparison" class="btn btn-primary" disabled>
+                            🔄 Generate Comparison
+                        </button>
+                    </div>
+                    
+                    <div id="comparison-loading" class="loading" style="display: none;">
+                        Generating comparison plot...
+                    </div>
+                    
+                    <div id="comparison-results" style="display: none;">
+                        <div class="comparison-content">
+                            <div class="comparison-header">
+                                <h3>Comparison Results</h3>
+                                <div class="comparison-info">
+                                    <span id="comparison-jobs"></span>
+                                </div>
+                            </div>
+                            
+                            <div class="comparison-plot">
+                                <img id="comparison-image" src="" alt="Comparison Plot" />
+                            </div>
+                            
+                            <div class="comparison-stats">
+                                <h4>📈 Coefficients at 0° Angle of Attack</h4>
+                                <div class="stats-grid">
+                                    <div class="stats-section">
+                                        <h5>Lift Coefficient (Cl)</h5>
+                                        <div class="stat-comparison">
+                                            <div class="stat-item">
+                                                <span class="stat-label" id="job1-name-cl">Job 1:</span>
+                                                <span class="stat-value" id="job1-cl">-</span>
+                                            </div>
+                                            <div class="stat-item">
+                                                <span class="stat-label" id="job2-name-cl">Job 2:</span>
+                                                <span class="stat-value" id="job2-cl">-</span>
+                                            </div>
+                                            <div class="stat-item difference">
+                                                <span class="stat-label">Difference:</span>
+                                                <span class="stat-value" id="diff-cl">-</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="stats-section">
+                                        <h5>Drag Coefficient (Cd)</h5>
+                                        <div class="stat-comparison">
+                                            <div class="stat-item">
+                                                <span class="stat-label" id="job1-name-cd">Job 1:</span>
+                                                <span class="stat-value" id="job1-cd">-</span>
+                                            </div>
+                                            <div class="stat-item">
+                                                <span class="stat-label" id="job2-name-cd">Job 2:</span>
+                                                <span class="stat-value" id="job2-cd">-</span>
+                                            </div>
+                                            <div class="stat-item difference">
+                                                <span class="stat-label">Difference:</span>
+                                                <span class="stat-value" id="diff-cd">-</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="stats-section">
+                                        <h5>Pitching Moment (CmPitch)</h5>
+                                        <div class="stat-comparison">
+                                            <div class="stat-item">
+                                                <span class="stat-label" id="job1-name-cm">Job 1:</span>
+                                                <span class="stat-value" id="job1-cm">-</span>
+                                            </div>
+                                            <div class="stat-item">
+                                                <span class="stat-label" id="job2-name-cm">Job 2:</span>
+                                                <span class="stat-value" id="job2-cm">-</span>
+                                            </div>
+                                            <div class="stat-item difference">
+                                                <span class="stat-label">Difference:</span>
+                                                <span class="stat-value" id="diff-cm">-</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- System Tab -->

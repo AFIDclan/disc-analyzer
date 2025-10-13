@@ -166,8 +166,19 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
             results = await getJobResults(job.name);
         }
 
+        // Prepare log information (limit to last 200 for performance)
+        const logLimit = 200;
+        const logs = job.logs.slice(-logLimit);
+        const logInfo = {
+            totalLogs: job.logs.length,
+            showing: logs.length,
+            limited: job.logs.length > logLimit
+        };
+
         res.json({
             ...job,
+            logs,
+            logInfo,
             results
         });
     } catch (error) {
@@ -232,7 +243,16 @@ app.get('/api/jobs/:id/logs', requireAuth, async (req, res) => {
             return res.status(404).json({ error: 'Job not found' });
         }
 
-        res.json({ logs: job.logs });
+        // Return only the last 200 logs to improve performance
+        const logLimit = 200;
+        const logs = job.logs.slice(-logLimit);
+        
+        res.json({ 
+            logs: logs,
+            totalLogs: job.logs.length,
+            showing: logs.length,
+            limited: job.logs.length > logLimit
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -402,7 +422,7 @@ app.post('/api/jobs/:id/postprocess', requireAuth, async (req, res) => {
 
         // Run postprocessing
         job.logs.push('[POSTPROCESS] Starting postprocessing...');
-        await execAsync(`cd ${__dirname} && ./venv/bin/python3 -u postprocess.py output/${job.name}`);
+        await execAsync(`cd ${__dirname} && ./venv/bin/python3 -u scripts/postprocess.py output/${job.name}`);
         job.logs.push('[POSTPROCESS] Postprocessing completed successfully');
 
         res.json({ success: true, message: 'Postprocessing completed' });
@@ -435,6 +455,144 @@ app.get('/api/system/cpu', requireAuth, async (req, res) => {
             }
         });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Compare two jobs
+app.post('/api/compare', requireAuth, async (req, res) => {
+    try {
+        const { job1Id, job2Id } = req.body;
+        
+        if (!job1Id || !job2Id) {
+            return res.status(400).json({ error: 'Both job1Id and job2Id are required' });
+        }
+
+        const job1 = jobs.get(parseInt(job1Id));
+        const job2 = jobs.get(parseInt(job2Id));
+        
+        if (!job1 || !job2) {
+            return res.status(404).json({ error: 'One or both jobs not found' });
+        }
+
+        if (job1.status !== JobStatus.COMPLETED || job2.status !== JobStatus.COMPLETED) {
+            return res.status(400).json({ error: 'Both jobs must be completed to compare' });
+        }
+
+        // Check if output directories exist
+        const outputDir1 = path.join(__dirname, 'output', job1.name);
+        const outputDir2 = path.join(__dirname, 'output', job2.name);
+        
+        if (!fsSync.existsSync(outputDir1) || !fsSync.existsSync(outputDir2)) {
+            return res.status(404).json({ error: 'Job output directories not found' });
+        }
+
+        // Generate unique comparison filename
+        const timestamp = Date.now();
+        const compareFilename = `comparison_${job1Id}_vs_${job2Id}_${timestamp}.png`;
+        const comparePath = path.join(__dirname, 'webapp/public/temp', compareFilename);
+        
+        // Ensure temp directory exists
+        const tempDir = path.dirname(comparePath);
+        if (!fsSync.existsSync(tempDir)) {
+            fsSync.mkdirSync(tempDir, { recursive: true });
+        }
+
+        // Run comparison script
+        const compareCommand = `./venv/bin/python3 scripts/compare.py "${outputDir1}" "${outputDir2}" "${comparePath}"`;
+        console.log('Running comparison:', compareCommand);
+        
+        const result = await execAsync(compareCommand);
+        
+        // Get stats at 0 degrees for both jobs
+        let stats = {};
+        try {
+            // Load PCHIP parameters for both jobs
+            const pchip1Path = path.join(outputDir1, 'pchip_parameters.json');
+            const pchip2Path = path.join(outputDir2, 'pchip_parameters.json');
+            
+            if (fsSync.existsSync(pchip1Path) && fsSync.existsSync(pchip2Path)) {
+                const pchip1 = JSON.parse(fsSync.readFileSync(pchip1Path, 'utf8'));
+                const pchip2 = JSON.parse(fsSync.readFileSync(pchip2Path, 'utf8'));
+                
+                // Use compare.py functionality to get values at 0 degrees
+                const predictCommand = `./venv/bin/python3 -c "
+import json
+import numpy as np
+from scipy.interpolate import PchipInterpolator
+
+# Load PCHIP data
+with open('${pchip1Path}') as f:
+    data1 = json.load(f)
+with open('${pchip2Path}') as f:
+    data2 = json.load(f)
+
+# Create interpolators
+cl1 = PchipInterpolator(data1['Cl']['knots'], data1['Cl']['values'])
+cd1 = PchipInterpolator(data1['Cd']['knots'], data1['Cd']['values']) 
+cm1 = PchipInterpolator(data1['CmPitch']['knots'], data1['CmPitch']['values'])
+
+cl2 = PchipInterpolator(data2['Cl']['knots'], data2['Cl']['values'])
+cd2 = PchipInterpolator(data2['Cd']['knots'], data2['Cd']['values'])
+cm2 = PchipInterpolator(data2['CmPitch']['knots'], data2['CmPitch']['values'])
+
+# Get values at 0 degrees
+aoa = 0.0
+values = {
+    'job1': {
+        'cl': float(cl1(aoa)),
+        'cd': float(cd1(aoa)), 
+        'cm': float(cm1(aoa))
+    },
+    'job2': {
+        'cl': float(cl2(aoa)),
+        'cd': float(cd2(aoa)),
+        'cm': float(cm2(aoa))
+    }
+}
+
+print(json.dumps(values))
+"`;
+                
+                const statsResult = await execAsync(predictCommand);
+                const parsedStats = JSON.parse(statsResult.stdout.trim());
+                
+                stats = {
+                    job1: {
+                        name: job1.name,
+                        cl: parsedStats.job1.cl,
+                        cd: parsedStats.job1.cd,
+                        cmPitch: parsedStats.job1.cm
+                    },
+                    job2: {
+                        name: job2.name,
+                        cl: parsedStats.job2.cl,
+                        cd: parsedStats.job2.cd,
+                        cmPitch: parsedStats.job2.cm
+                    },
+                    differences: {
+                        cl: parsedStats.job2.cl - parsedStats.job1.cl,
+                        cd: parsedStats.job2.cd - parsedStats.job1.cd,
+                        cmPitch: parsedStats.job2.cm - parsedStats.job1.cm
+                    }
+                };
+            }
+        } catch (statsError) {
+            console.error('Error calculating stats:', statsError);
+            stats = { error: 'Could not calculate stats at 0° AoA' };
+        }
+
+        res.json({
+            success: true,
+            comparison: {
+                job1: { id: job1.id, name: job1.name },
+                job2: { id: job2.id, name: job2.name },
+                imageUrl: `/temp/${compareFilename}`,
+                stats: stats
+            }
+        });
+    } catch (error) {
+        console.error('Comparison error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -528,7 +686,7 @@ async function runJob(job) {
 
         // Run postprocessing
         job.logs.push('Running postprocessing...');
-        await execAsync(`./venv/bin/python3 -u postprocess.py output/${job.name}`);
+        await execAsync(`./venv/bin/python3 -u scripts/postprocess.py output/${job.name}`);
         job.logs.push('Postprocessing completed');
 
         job.status = JobStatus.COMPLETED;
