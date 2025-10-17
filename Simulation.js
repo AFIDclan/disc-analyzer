@@ -19,9 +19,9 @@ class Simulation {
         this.onAoAComplete = options.onAoAComplete || null;
         this.onTimeUpdate = options.onTimeUpdate || null;
         this.onLogMessage = options.onLogMessage || null;
-        
+        this.simulation_max_time = options.simulation_max_time || 1200; // Default max time
+
         // Constants for progress calculation
-        this.MAX_SIMULATION_TIME = 800;
         this.current_aoa_index = 0;
         this.current_process = null; // Track current running process
     }
@@ -134,6 +134,9 @@ class Simulation {
         // Update number of processors in decomposeParDict
         await this.run_command(`sed -i 's/numberOfSubdomains [0-9]\\+/numberOfSubdomains ${n_processors}/' ./system/decomposeParDict`);
 
+        // Update endTime in controlDict
+        await this.run_command(`sed -i 's/endTime[ \t][ \t]*[0-9.eE+-]\+/endTime ${this.simulation_max_time}/' ./system/controlDict`);
+
 
         this.log.info(`Rotating and translating STL model for angle of attack: ${aoa} degrees`);
         await this.run_command(`surfaceTransformPoints -rotate-z '${-aoa}' ./constant/triSurface/model.stl ./constant/triSurface/model_rotated.stl`);
@@ -147,16 +150,20 @@ class Simulation {
         this.log.info(`Running blockMesh`);
         await this.run_command('blockMesh');
 
+        // Initial decomposition for snappyHexMesh
+        this.log.info(`Decomposing case for snappyHexMesh`);
+        await this.run_command('decomposePar');
+
         this.log.info(`Running snappyHexMesh`);
-        await this.run_command('snappyHexMesh -overwrite', 
+        await this.run_command('mpirun -np ' + n_processors + ' snappyHexMesh -parallel -overwrite',
             null,
             (data) => { this.log.error(`[snappyHexMesh stderr] ${data}`); }
         );
 
-        this.log.info(`Running checkMesh`);
-        await this.run_command('checkMesh', 
+        this.log.info(`Running reconstructParMesh -constant`);
+        await this.run_command('reconstructParMesh -constant',
             null,
-            (data) => { this.log.error(`[checkMesh stderr] ${data}`); }
+            (data) => { this.log.error(`[reconstructParMesh stderr] ${data}`); }
         );
 
         // Decompose for parallel run
@@ -199,7 +206,7 @@ class Simulation {
             
             // Calculate fine-grained progress based on simulation time
             if (this.onTimeUpdate) {
-                const timeProgress = Math.min(time / this.MAX_SIMULATION_TIME, 1.0); // 0-1 for current AoA
+                const timeProgress = Math.min(time / this.simulation_max_time, 1.0); // 0-1 for current AoA
                 const aoaProgress = this.current_aoa_index / this.angle_of_attacks.length; // 0-1 for completed AoAs
                 const overallProgress = (aoaProgress + (timeProgress / this.angle_of_attacks.length)) * 100;
                 
@@ -208,7 +215,7 @@ class Simulation {
             
             // Update overall progress callback
             if (this.onProgress) {
-                const timeProgress = Math.min(time / this.MAX_SIMULATION_TIME, 1.0);
+                const timeProgress = Math.min(time / this.simulation_max_time, 1.0);
                 const aoaProgress = this.current_aoa_index / this.angle_of_attacks.length;
                 const overallProgress = Math.round((aoaProgress + (timeProgress / this.angle_of_attacks.length)) * 100);
                 

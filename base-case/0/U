@@ -31,11 +31,11 @@ boundaryField
     }
     yMin
     {
-        type            symmetryPlane;
+        type            slip;
     }
     yMax
     {
-        type            symmetryPlane;
+        type            slip;
     }
     zMin
     {

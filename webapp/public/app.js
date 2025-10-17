@@ -90,9 +90,10 @@
     handleAoAPreset(preset) {
       const aoaInput = document.getElementById("aoa-values");
       const presets = {
+        "minimum": "0, -0.5, 0.5",
         "basic": "-10, -5, 0, 5, 10",
         "extended": "-20, -15, -10, -5, 0, 5, 10, 15, 20",
-        "full": "-60, -50, -40, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90"
+        "full": "-90, -60, -40, -30, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 40, 60, 90"
       };
       if (presets[preset]) {
         aoaInput.value = presets[preset];
